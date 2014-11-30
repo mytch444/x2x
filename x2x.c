@@ -172,23 +172,20 @@ typedef struct {
 
     /* state of connection */
     int     mode;                        /* connection */
-    int     eventMask;                /* trigger */
 
     /* coordinate conversion stuff */
     int     toScreen;
     int     nScreens;
-    /*
-    short   **xTables; // precalculated conversion tables 
-    short   **yTables;
-    */
-    int     fromConnCoord; // location of cursor after conn/disc ops 
-    int     toDiscCoord;
-//    int     fromIncrCoord; // location of cursor after incr/decr ops 
-//    int     fromDecrCoord;
     
-    int x, y;
-    int toWidth, toHeight;
-    int xcenter, ycenter;
+    int     fromConnCoord;
+    int     toDiscCoord;
+    
+    int     x, y;
+    int     toWidth, toHeight;
+    int     xcenter, ycenter;
+ 
+    // Window that listences to keys and movements when connected.
+    Window  pad;
 
     /* selection forwarding info */
     DPYXTRA fromDpyXtra;
@@ -226,6 +223,7 @@ static Bool    doCapsLkHack = False;
 static Bool    doDpmsMouse  = True;
 static int     logicalOffset= 0;
 static int     nButtons     = 0;
+static int     padSize      = 300;
 static KeySym  buttonmap[N_BUTTONS + 1][MAX_BUTTONMAPEVENTS + 1];
 
 #if debug
@@ -437,10 +435,6 @@ static void ParseCommandLine(argc, argv)
                 }
                 buttonmap[button][eventno] = NoSymbol;
             }
-        } else if (!strcasecmp(argv[arg], "-noresurface")) {
-            doResurface = False;
-
-            debug("will not resurface the trigger window when obscured\n");
         } else if (!strcasecmp(argv[arg], "-shadow")) {
             if (++arg >= argc) Usage();
             pShadow = (PSHADOW)malloc(sizeof(SHADOW));
@@ -477,7 +471,6 @@ static void Usage()
     printf("       -west\n");
     printf("       -nosel\n");
     printf("       -noautoup\n");
-    printf("       -noresurface\n");
     printf("       -capslockhack\n");
     printf("       -nocapslockhack\n");
     printf("       -shadow <DISPLAY>\n");
@@ -605,16 +598,12 @@ static void InitDpyInfo(pDpyInfo)
 
     /* window init structures */
     xswa.override_redirect = True;
+    xswa.background_pixel = black;
     xsh = XAllocSizeHints();
-    eventMask = KeyPressMask | KeyReleaseMask;
 
-    // cursor locations for moving between screens 
-    //pDpyInfo->fromIncrCoord = triggerw;
-    //pDpyInfo->fromDecrCoord = (vertical ? fromHeight : fromWidth) - triggerw - 1;
     if (doEdge) { // edge triggers x2x 
 
         nullPixmap = XCreatePixmap(fromDpy, root, 1, 1, 1);
-        eventMask |= EnterWindowMask;
         pDpyInfo->grabCursor =
             None;
             // For debuging this will be disabled. Put it back it to hide 
@@ -624,38 +613,28 @@ static void InitDpyInfo(pDpyInfo)
         // trigger window location 
         if (doEdge == EDGE_NORTH) {
             triggerLoc = 0;
-            pDpyInfo->fromConnCoord = triggerw;
+            pDpyInfo->fromConnCoord = triggerw + 1;
             pDpyInfo->toDiscCoord = toHeight + triggerw;
         } else if (doEdge == EDGE_SOUTH) {
             triggerLoc = fromHeight - triggerw;
-            pDpyInfo->fromConnCoord = fromHeight - triggerw;
+            pDpyInfo->fromConnCoord = fromHeight - triggerw - 1;
             pDpyInfo->toDiscCoord = -triggerw;
         } else if (doEdge == EDGE_EAST) {
             triggerLoc = fromWidth - triggerw;
-            pDpyInfo->fromConnCoord = fromWidth - triggerw;
+            pDpyInfo->fromConnCoord = fromWidth - triggerw - 1;
             pDpyInfo->toDiscCoord = -triggerw;
         } else /* doEdge == EDGE_WEST */ {
             triggerLoc = 0;
-            pDpyInfo->fromConnCoord = triggerw;
+            pDpyInfo->fromConnCoord = triggerw + 1;
             pDpyInfo->toDiscCoord = toWidth + triggerw;
         } /* END if doEdge == ... */
 
-        xswa.background_pixel = black;
-
-        /* fromWidth - 1 doesn't seem to work for some reason */
-        /* Use triggerw offsets so that if an x2x is running
-           along the left edge and along the north edge, both with
-           -resurface, we don't get a feedback loop of them each
-           fighting to be on top.
-           --09/27/99 Greg J. Badros <gjb@cs.washington.edu> */
-        /* also, make it an InputOnly window so I don't lose
-           screen real estate --09/29/99 gjb */
         trigger = pDpyInfo->trigger =
             XCreateWindow(fromDpy, root,
-                    triggerLoc,
-                    triggerw,
-                    triggerw,
-                    fromHeight - (2*triggerw),
+                    vertical ? triggerw : triggerLoc,
+                    vertical ? triggerLoc : triggerw,
+                    vertical ? fromWidth - (2 * triggerw) : triggerw,
+                    vertical ? triggerw : fromHeight - (2 * triggerw),
                     0, 0, InputOnly, 0,
                     CWOverrideRedirect, &xswa);
     }
@@ -686,11 +665,19 @@ static void InitDpyInfo(pDpyInfo)
 
     pDpyInfo->toWidth = toWidth;
     pDpyInfo->toHeight = toHeight;
-    pDpyInfo->x = toWidth / 2;
-    pDpyInfo->y = toHeight / 2;
-    pDpyInfo->xcenter = triggerw / 2 + 100;
-    pDpyInfo->ycenter = (fromHeight - (2 * triggerw)) / 2 + 100;
-    
+    pDpyInfo->xcenter = padSize / 2;
+    pDpyInfo->ycenter = padSize / 2;
+
+    pDpyInfo->pad = XCreateWindow(fromDpy, root, 
+            fromWidth / 2 - padSize / 2, 
+            fromHeight / 2 - padSize / 2,
+            padSize, padSize, 
+            0, 0,
+            InputOnly, 0, CWOverrideRedirect, &xswa);
+
+    XSelectInput(fromDpy, trigger, 
+            KeyPressMask | KeyReleaseMask | PointerMotionMask);
+
     // conversion stuff 
     pDpyInfo->toScreen = (doEdge == EDGE_WEST || doEdge == EDGE_NORTH)
         ? (nScreens - 1) : 0;
@@ -703,11 +690,7 @@ static void InitDpyInfo(pDpyInfo)
     /* initialize pointer mapping */
     RefreshPointerMapping(toDpy, pDpyInfo);
 
-    if (doResurface) /* get visibility events */
-        eventMask |= VisibilityChangeMask;
-
-    XSelectInput(fromDpy, trigger, eventMask);
-    pDpyInfo->eventMask = eventMask; /* save for future munging */
+    XSelectInput(fromDpy, trigger, EnterWindowMask | VisibilityChangeMask);
     XMapRaised(fromDpy, trigger);
     
     printf("test grab control of shadows\n");
@@ -723,6 +706,7 @@ static void DoConnect(pDpyInfo)
 
     Display *fromDpy = pDpyInfo->fromDpy;
     Window  trigger = pDpyInfo->trigger;
+    Window  pad = pDpyInfo->pad;
 
     PSHADOW   pShadow;
 
@@ -740,15 +724,19 @@ static void DoConnect(pDpyInfo)
 
     printf("grabbing pointer and keyboard on trigger\n");
 
-    XGrabPointer(fromDpy, trigger, True,
+    XMapWindow(fromDpy, pad);
+
+    XWarpPointer(fromDpy, None, pad, 0, 0, 0, 0,
+            pDpyInfo->xcenter, pDpyInfo->ycenter);
+
+    XGrabPointer(fromDpy, pad, True,
             PointerMotionMask | ButtonPressMask | ButtonReleaseMask,
             GrabModeAsync, GrabModeAsync,
             None, pDpyInfo->grabCursor, CurrentTime);
-    XGrabKeyboard(fromDpy, trigger, True,
+    XGrabKeyboard(fromDpy, pad, True,
             GrabModeAsync, GrabModeAsync,
             CurrentTime);
     
-    XSelectInput(fromDpy, trigger, pDpyInfo->eventMask | PointerMotionMask);
     XFlush(fromDpy);
    
     printf("...connected\n");
@@ -768,7 +756,7 @@ static void DoDisconnect(pDpyInfo)
     printf("ungrabbing\n");
     XUngrabKeyboard(fromDpy, CurrentTime);
     XUngrabPointer(fromDpy, CurrentTime);
-    XSelectInput(fromDpy, pDpyInfo->trigger, pDpyInfo->eventMask);
+    XUnmapWindow(fromDpy, pDpyInfo->pad);
 
     XFlush(fromDpy);
 
@@ -781,6 +769,7 @@ static void RegisterEventHandlers(pDpyInfo)
     printf("RegiserEventHandlers.\n");
     Display *fromDpy = pDpyInfo->fromDpy;
     Window  trigger = pDpyInfo->trigger;
+    Window  pad = pDpyInfo->pad;
     Display *toDpy;
     Window  propWin;
 
@@ -788,18 +777,18 @@ static void RegisterEventHandlers(pDpyInfo)
 
     printf("Xsavecontext\n");
 
-    XSAVECONTEXT(fromDpy, trigger, MotionNotify,    ProcessMotionNotify);
-    XSAVECONTEXT(fromDpy, trigger, Expose,          ProcessExpose);
-    XSAVECONTEXT(fromDpy, trigger, EnterNotify,     ProcessEnterNotify);
-    XSAVECONTEXT(fromDpy, trigger, ButtonPress,     ProcessButtonPress);
-    XSAVECONTEXT(fromDpy, trigger, ButtonRelease,   ProcessButtonRelease);
-    XSAVECONTEXT(fromDpy, trigger, KeyPress,        ProcessKeyEvent);
-    XSAVECONTEXT(fromDpy, trigger, KeyRelease,      ProcessKeyEvent);
-    XSAVECONTEXT(fromDpy, trigger, ConfigureNotify, ProcessConfigureNotify);
-    XSAVECONTEXT(fromDpy, trigger, ClientMessage,   ProcessClientMessage);
-    XSAVECONTEXT(fromDpy, trigger, ClientMessage,   ProcessClientMessage);
-    XSAVECONTEXT(fromDpy, trigger, ClientMessage,   ProcessClientMessage);
-    XSAVECONTEXT(fromDpy, None,    MappingNotify,   ProcessMapping);
+    XSAVECONTEXT(fromDpy, trigger,  EnterNotify,     ProcessEnterNotify);
+    XSAVECONTEXT(fromDpy, trigger,  Expose,          ProcessExpose);
+    XSAVECONTEXT(fromDpy, pad,      MotionNotify,    ProcessMotionNotify);
+    XSAVECONTEXT(fromDpy, pad,      ButtonPress,     ProcessButtonPress);
+    XSAVECONTEXT(fromDpy, pad,      ButtonRelease,   ProcessButtonRelease);
+    XSAVECONTEXT(fromDpy, pad,      KeyPress,        ProcessKeyEvent);
+    XSAVECONTEXT(fromDpy, pad,      KeyRelease,      ProcessKeyEvent);
+    XSAVECONTEXT(fromDpy, trigger,  ConfigureNotify, ProcessConfigureNotify);
+    XSAVECONTEXT(fromDpy, trigger,  ClientMessage,   ProcessClientMessage);
+    XSAVECONTEXT(fromDpy, trigger,  ClientMessage,   ProcessClientMessage);
+    XSAVECONTEXT(fromDpy, trigger,  ClientMessage,   ProcessClientMessage);
+    XSAVECONTEXT(fromDpy, None,     MappingNotify,   ProcessMapping);
 
 
     if (doResurface)
@@ -819,12 +808,10 @@ static Bool ProcessEvent(dpy, pDpyInfo)
     XAnyEvent *pEv = (XAnyEvent *)&ev;
     HANDLER   handler;
 
-#define XFINDCONTEXT(A, B, C, D) XFindContext(A, B, C, (XPointer *)(D))
-
     XNextEvent(dpy, &ev);
     handler = 0;
-    if ((!XFINDCONTEXT(dpy, pEv->window, pEv->type, &handler)) ||
-            (!XFINDCONTEXT(dpy, None, pEv->type, &handler))) {
+    if ((!XFindContext(dpy, pEv->window, pEv->type, (XPointer *) &handler)) ||
+            (!XFindContext(dpy, None, pEv->type, (XPointer *) &handler))) {
         /* have handler */
         return ((*handler)(dpy, pDpyInfo, &ev));
     } else {
@@ -859,26 +846,19 @@ static Bool ProcessMotionNotify(unused, pDpyInfo, pEv)
     dx = pEv->x - pDpyInfo->xcenter;
     dy = pEv->y - pDpyInfo->ycenter;
 
-    pDpyInfo->x += dx;
-    pDpyInfo->y += dy;
-
-    printf("%i,%i %i,%i\n", dx, dy, pEv->x, pEv->y);
-
     if (dx == 0 && dy == 0)
         return False;
-
-    if (pEv->same_screen) {
-        delta = dx + dy;
-        if (delta < 0) delta = -delta;
-        if (delta > pDpyInfo->unreasonableDelta) {
-            printf("unreasable\n");
-            return False;
-        }
+    
+    if (dx + dy < pDpyInfo->unreasonableDelta) {
+        pDpyInfo->x += dx;
+        pDpyInfo->y += dy;
     }
 
-    if (pDpyInfo->vertical ? pDpyInfo->y : pDpyInfo->x 
-            - pDpyInfo->toDiscCoord >= 0) {
-        printf("disconnect\n");
+    if ((doEdge == EDGE_WEST && pDpyInfo->x > pDpyInfo->toWidth) ||
+            (doEdge == EDGE_EAST && pDpyInfo->x < 0) ||
+            (doEdge == EDGE_NORTH && pDpyInfo->y > pDpyInfo->toHeight) ||
+            (doEdge == EDGE_SOUTH && pDpyInfo->y < 0)) {
+        printf("disconnect %i %i\n", pDpyInfo->x, pDpyInfo->y);
         DoDisconnect(pDpyInfo);
         if (pDpyInfo->vertical)
             XWarpPointer(pDpyInfo->fromDpy, None, pDpyInfo->root, 0, 0, 0, 0,
@@ -892,13 +872,13 @@ static Bool ProcessMotionNotify(unused, pDpyInfo, pEv)
     if (pDpyInfo->x >= pDpyInfo->toWidth) {
        pDpyInfo->x = pDpyInfo->toWidth - 1;
     } else if (pDpyInfo->x <= 0) {
-        pDpyInfo->x = 0;
+        pDpyInfo->x = 1;
     }
 
     if (pDpyInfo->y >= pDpyInfo->toHeight) {
         pDpyInfo->y = pDpyInfo->toHeight - 1;
     } else if (pDpyInfo->y <= 0) {
-        pDpyInfo->y = 0;
+        pDpyInfo->y = 1;
     }
 
     for (pShadow = shadows; pShadow; pShadow = pShadow->pNext) {
@@ -908,13 +888,11 @@ static Bool ProcessMotionNotify(unused, pDpyInfo, pEv)
 
         XTestFakeMotionEvent(pShadow->dpy, toScreenNum,
                 pDpyInfo->x, pDpyInfo->y,
-//                vert?pDpyInfo->xTables[toScreenNum][pEv->x_root]:toCoord,
-//                vert?toCoord:pDpyInfo->yTables[toScreenNum][pEv->y_root],
                 0);
         XFlush(pShadow->dpy);
     } /* END for */
 
-    XWarpPointer(pDpyInfo->fromDpy, None, pDpyInfo->trigger, 0, 0, 0, 0,
+    XWarpPointer(pDpyInfo->fromDpy, None, pDpyInfo->pad, 0, 0, 0, 0,
             pDpyInfo->xcenter, pDpyInfo->ycenter);
     
     return False;
@@ -955,14 +933,6 @@ static Bool ProcessEnterNotify(dpy, pDpyInfo, pEv)
             pDpyInfo->x = pDpyInfo->toDiscCoord > 0 ? pDpyInfo->toDiscCoord - 1 : 0;
             pDpyInfo->y = pEv->y;
         }
-
-        XWarpPointer(fromDpy, None, pDpyInfo->root, 0, 0, 0, 0,
-                pDpyInfo->xcenter, pDpyInfo->ycenter);
- 
-        //        xmev.x_root = pDpyInfo->lastFromCoord = pDpyInfo->fromConnCoord;
-//        xmev.y_root = pEv->y_root;
-//        xmev.same_screen = True;
-//        ProcessMotionNotify(NULL, pDpyInfo, &xmev);
     }  /* END if NotifyNormal... */
     return False;
 
