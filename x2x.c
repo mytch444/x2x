@@ -177,10 +177,10 @@ typedef struct {
     /* coordinate conversion stuff */
     int     toScreen;
     int     nScreens;
-    
+
     int     fromConnCoord;
     int     toDiscCoord;
-    
+
     int     x, y;
     int     toWidth, toHeight;
     int     xcenter, ycenter;
@@ -381,7 +381,7 @@ static void ParseCommandLine(argc, argv)
             doAutoUp = False;
 
             debug("will not automatically lift keys and buttons\n");
-       } else if (!strcasecmp(argv[arg], "-capslockhack")) {
+        } else if (!strcasecmp(argv[arg], "-capslockhack")) {
             doCapsLkHack = True;
 
             debug("behavior of CapsLock will be hacked\n");
@@ -398,7 +398,7 @@ static void ParseCommandLine(argc, argv)
             doCapsLkHack = False;
 
             debug("behavior of CapsLock will not be hacked\n");
-       } else if (!strcasecmp(argv[arg], "-buttonmap")) {
+        } else if (!strcasecmp(argv[arg], "-buttonmap")) {
             if (++arg >= argc) Usage();
             button = atoi(argv[arg]);
 
@@ -489,7 +489,7 @@ static void DoX2X(fromDpy, toDpy)
 {
 
     printf("Starting loop\n");
-    
+
     DPYINFO   dpyInfo;
     int       nfds;
     fd_set    fdset;
@@ -624,9 +624,9 @@ static void InitDpyInfo(pDpyInfo)
                     vertical ? triggerLoc : triggerw,
                     vertical ? fromWidth - (2 * triggerw) : triggerw,
                     vertical ? triggerw : fromHeight - (2 * triggerw),
-                    0, 0, CopyFromParent, 0,
-//                    0, 0, InputOnly, 0,
-                    CWOverrideRedirect | CWBackPixel | CWBorderPixel,
+                    //0, 0, CopyFromParent, 0,
+                    0, 0, InputOutput, 0,
+                    CWOverrideRedirect,// | CWBackPixel | CWBorderPixel,
                     &xswa);
     }
 
@@ -684,7 +684,7 @@ static void InitDpyInfo(pDpyInfo)
     XSelectInput(fromDpy, trigger, EnterWindowMask | VisibilityChangeMask
             | PropertyChangeMask | ExposureMask);
     XMapRaised(fromDpy, trigger);
-    
+
     printf("test grab control of shadows\n");
     for (pShadow = shadows; pShadow; pShadow = pShadow->pNext)
         XTestGrabControl(pShadow->dpy, True); /* impervious to grabs! */
@@ -728,9 +728,9 @@ static void DoConnect(pDpyInfo)
     XGrabKeyboard(fromDpy, pad, True,
             GrabModeAsync, GrabModeAsync,
             CurrentTime);
-    
+
     XFlush(fromDpy);
-   
+
     printf("...connected\n");
 } /* END DoConnect */
 
@@ -767,19 +767,19 @@ static void RegisterEventHandlers(pDpyInfo)
 #define XSAVECONTEXT(A, B, C, D) XSaveContext(A, B, C, (XPointer)(D))
 
     printf("Xsavecontext\n");
-    
+
     XSAVECONTEXT(fromDpy, trigger,  EnterNotify,     ProcessEnterNotify);
     XSAVECONTEXT(fromDpy, trigger,  Expose,          ProcessExpose);
     XSAVECONTEXT(fromDpy, trigger,  VisibilityNotify,ProcessVisibility);
     XSAVECONTEXT(fromDpy, trigger,  ConfigureNotify, ProcessConfigureNotify);
     XSAVECONTEXT(fromDpy, trigger,  ClientMessage,   ProcessClientMessage);
-    
+
     XSAVECONTEXT(fromDpy, pad,      MotionNotify,    ProcessMotionNotify);
     XSAVECONTEXT(fromDpy, pad,      ButtonPress,     ProcessButtonPress);
     XSAVECONTEXT(fromDpy, pad,      ButtonRelease,   ProcessButtonRelease);
     XSAVECONTEXT(fromDpy, pad,      KeyPress,        ProcessKeyEvent);
     XSAVECONTEXT(fromDpy, pad,      KeyRelease,      ProcessKeyEvent);
-   
+
     XSAVECONTEXT(fromDpy, None,     MappingNotify,   ProcessMapping);
     XSAVECONTEXT(toDpy,   None,     MappingNotify,   ProcessMapping);
 
@@ -793,13 +793,10 @@ static Bool ProcessEvent(dpy, pDpyInfo)
     XAnyEvent *pEv = (XAnyEvent *)&ev;
     HANDLER   handler;
 
-    printf("Got event\n");
-
     XNextEvent(dpy, &ev);
     handler = 0;
     if ((!XFindContext(dpy, pEv->window, pEv->type, (XPointer *) &handler)) ||
             (!XFindContext(dpy, None, pEv->type, (XPointer *) &handler))) {
-        printf("found handler\n");
         /* have handler */
         return ((*handler)(dpy, pDpyInfo, &ev));
     } else {
@@ -836,7 +833,7 @@ static Bool ProcessMotionNotify(unused, pDpyInfo, pEv)
 
     if (dx == 0 && dy == 0)
         return False;
-    
+
     if (dx + dy < pDpyInfo->unreasonableDelta) {
         pDpyInfo->x += dx;
         pDpyInfo->y += dy;
@@ -856,9 +853,9 @@ static Bool ProcessMotionNotify(unused, pDpyInfo, pEv)
                     pDpyInfo->fromConnCoord, pDpyInfo->y);
         return False;
     }
- 
+
     if (pDpyInfo->x >= pDpyInfo->toWidth) {
-       pDpyInfo->x = pDpyInfo->toWidth - 1;
+        pDpyInfo->x = pDpyInfo->toWidth - 1;
     } else if (pDpyInfo->x <= 0) {
         pDpyInfo->x = 1;
     }
@@ -882,7 +879,7 @@ static Bool ProcessMotionNotify(unused, pDpyInfo, pEv)
 
     XWarpPointer(pDpyInfo->fromDpy, None, pDpyInfo->pad, 0, 0, 0, 0,
             pDpyInfo->xcenter, pDpyInfo->ycenter);
-    
+
     return False;
 
 } /* END ProcessMotionNotify */
@@ -914,7 +911,7 @@ static Bool ProcessEnterNotify(dpy, pDpyInfo, pEv)
             (pDpyInfo->mode == X2X_DISCONNECTED) && 
             (dpy == pDpyInfo->fromDpy)) {
         DoConnect(pDpyInfo);
-           
+
         if (pDpyInfo->vertical) {
             pDpyInfo->x = pEv->x;
             pDpyInfo->y = pDpyInfo->toDiscCoord > 0 
@@ -950,7 +947,8 @@ static Bool ProcessButtonPress(dpy, pDpyInfo, pEv)
             debug("awaiting button release before connecting\n");
             break;
         case X2X_CONNECTED:
-            debug("Got button %d, max is %d (%d)\n", pEv->button, N_BUTTONS, nButtons);
+            debug("Got button %d, max is %d (%d)\n", 
+                    pEv->button, N_BUTTONS, nButtons);
             if ((pEv->button <= N_BUTTONS) &&
                     (buttonmap[pEv->button][0] != NoSymbol))
             {
@@ -977,7 +975,8 @@ static Bool ProcessButtonPress(dpy, pDpyInfo, pEv)
                 toButton = pDpyInfo->inverseMap[pEv->button];
                 for (pShadow = shadows; pShadow; pShadow = pShadow->pNext) {
                     XTestFakeButtonEvent(pShadow->dpy, toButton, True, 0);
-                    debug("from button %d down, to button %d down\n", pEv->button,toButton);
+                    debug("from button %d down, to button %d down\n", 
+                            pEv->button,toButton);
                     XFlush(pShadow->dpy);
                 } /* END for */
             }
@@ -1069,7 +1068,7 @@ static Bool ProcessKeyEvent(dpy, pDpyInfo, pEv)
     PDPYINFO pDpyInfo;
     XKeyEvent *pEv;
 {
-    
+
     printf("process key event\n");
 
     KeyCode   keycode;
@@ -1257,6 +1256,8 @@ static Bool ProcessSelectionClear(dpy, pDpyInfo, pEv)
 
 } /* END ProcessSelectionClear */
 
+// How the fuck did this work with an inputonly window?
+
 /**********
  * process a visibility event
  **********/
@@ -1306,15 +1307,15 @@ static void RefreshPointerMapping(dpy, pDpyInfo)
     PDPYINFO            pDpyInfo;
 {
     printf("refreshPointerMapping?\n");
-
+    
     unsigned int buttCtr;
     unsigned char buttonMap[N_BUTTONS];
 
-    if (dpy == pDpyInfo->toDpy) { /* only care about toDpy */
-        /* straightforward mapping */
+    if (dpy == pDpyInfo->toDpy) { // only care about toDpy 
+        // straightforward mapping 
         for (buttCtr = 1; buttCtr <= N_BUTTONS; ++buttCtr) {
             pDpyInfo->inverseMap[buttCtr] = buttCtr;
-        } /* END for */
+        } // END for 
 
         nButtons = MIN(N_BUTTONS, XGetPointerMapping(dpy, buttonMap, N_BUTTONS));
         debug("got button mapping: %d items\n", nButtons);
@@ -1324,9 +1325,9 @@ static void RefreshPointerMapping(dpy, pDpyInfo)
                 debug("button %d -> %d\n", buttCtr + 1, buttonMap[buttCtr]);
                 if (buttonMap[buttCtr] <= N_BUTTONS)
                     pDpyInfo->inverseMap[buttonMap[buttCtr]] = buttCtr + 1;
-            } /* END for */
-        } /* END if */
-    } /* END if toDpy */
+            } // END for 
+        } // END if 
+    } // END if toDpy 
 
 } /* END RefreshPointerMapping */
 
